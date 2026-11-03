@@ -1,2 +1,2 @@
-// Vercel Node entrypoint; the application server remains in server/index.js.
-import './server/index.js';
+// Vercel Node function entrypoint.
+export { handler as default } from "./server/index.js";
