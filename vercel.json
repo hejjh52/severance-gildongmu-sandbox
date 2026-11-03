@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "server.js": {
-      "includeFiles": "app/**"
+      "includeFiles": "{app/**,data/**}"
     }
   },
   "rewrites": [
