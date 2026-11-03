@@ -1,14 +1,11 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "framework": null,
+  "outputDirectory": "app",
   "functions": {
-    "server.js": {
-      "includeFiles": "{app/**,data/**}"
+    "api/*.js": {
+      "includeFiles": "data/**"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/server.js"
-    }
-  ]
+  }
 }
