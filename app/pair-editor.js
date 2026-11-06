@@ -4,13 +4,13 @@ const STORAGE='severance-pair-editor-v1', DBNAME='severance-map-images';
 const COLORS={main_elevator:'#e14e51',ward_elevator:'#9658d9',elevator:'#20a9b4',landmark:'#2477b9',stairs:'#2db37d',escalator:'#e5a339'};
 const ALIGNABLE=new Set(['main_elevator','ward_elevator','elevator','landmark']);
 const IMG_WIDTH=992,LOW_HEIGHT=1140;
-let geometry={floorCorr:{}}, assets=new Map(), regionCache=new Map(), hoverRegion={left:null,right:null}, db=null,history=[];
-let S={group:'low',left:4,right:3,kind:'main_elevator',name:'MAIN-A',north:{low:0,high:0},pairs:[],transforms:{},pending:null,preview:false,alpha:.5,showRegions:true,regionMode:'room'};
+let geometry={floorCorr:{}}, assets=new Map(), regionCache=new Map(), hoverRegion={left:null,right:null}, manualDraft=null, db=null,history=[];
+let S={group:'low',left:4,right:3,kind:'main_elevator',name:'MAIN-A',north:{low:0,high:0},pairs:[],transforms:{},pending:null,preview:false,alpha:.5,showRegions:true,regionMode:'all',manualBoxes:{},migrationV2:false};
 let camera={left:{zoom:1,panX:0,panY:0},right:{zoom:1,panX:0,panY:0}};
 let stagePointer=null,lastSide='right',saveTimeout=0,toastTimeout=0;
 function floors(){return S.group==='low'?LOW:HIGH;}
 function toast(txt){$('toast').textContent=txt;$('toast').classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('toast').classList.remove('show'),3500);}
-function editable(){return{group:S.group,left:S.left,right:S.right,kind:S.kind,name:S.name,north:S.north,pairs:S.pairs,transforms:S.transforms,showRegions:S.showRegions,regionMode:S.regionMode};}
+function editable(){return{group:S.group,left:S.left,right:S.right,kind:S.kind,name:S.name,north:S.north,pairs:S.pairs,transforms:S.transforms,showRegions:S.showRegions,regionMode:S.regionMode,manualBoxes:S.manualBoxes,migrationV2:S.migrationV2};}
 function snapshot(){history.push(JSON.stringify(editable()));if(history.length>35)history.shift();}
 function save(){clearTimeout(saveTimeout);$('saveStatus').textContent='저장 중';saveTimeout=setTimeout(()=>{try{localStorage.setItem(STORAGE,JSON.stringify(editable()));$('saveStatus').textContent='자동 저장됨';}catch(e){$('saveStatus').textContent='저장 실패 · JSON 저장 필요';}},250);}
 function fmt(n,d=1){return Number(n||0).toFixed(d);}
@@ -42,72 +42,111 @@ async function putFiles(files,bulk){
  update();toast(n+'개 층 도면 등록됨. 저장한 이미지는 기존 워크벤치와 공유해요.');
 }
 
+
 /*
- * Raster region candidates:
- *  1. Contiguous light-grey room fills bounded by thin outlines.
- *  2. Contiguous blue elevator/escalator symbol glyphs.
- *
- * These are heuristic candidates, never certified rooms or elevator cars.
- * Read the image only on demand and cache the detection per floor.
- * Stored coordinates are normalized to the existing 992px local-image width.
+ * Multi-source map segmentation:
+ * 1. enclosed light / white compartments separated by drawn wall outlines
+ * 2. pale gray compartment fills
+ * 3. blue icon candidates
+ * 4. persistent user-drawn rectangles for missing/open compartments
+ * Candidates are provisional selections, NOT verified building geometry.
  */
 function detectRegions(f){
  if(regionCache.has(f))return regionCache.get(f);
- const a=asset(f);if(!a)return{room:[],icon:[]};
- const scale=.78,w=Math.max(1,Math.round(IMG_WIDTH*scale)),h=Math.max(1,Math.round(a.height*scale));
+ const a=asset(f);
+ if(!a)return {bounded:[],room:[],icon:[],idMap:null,byId:new Map(),sampleScale:1,w:0,h:0};
+ // Retain thin (1-pixel) boundaries; earlier aggressive morphology lost narrow cells.
+ const ss=.85,w=Math.max(1,Math.round(IMG_WIDTH*ss)),h=Math.max(1,Math.round(a.height*ss)),N=w*h;
  const off=document.createElement('canvas');off.width=w;off.height=h;
- const oc=off.getContext('2d',{willReadFrequently:true});oc.drawImage(a.img,0,0,w,h);
- const pix=oc.getImageData(0,0,w,h).data,n=w*h;
- const roomMask=new Uint8Array(n),iconMask=new Uint8Array(n);
- for(let i=0,j=0;i<n;i++,j+=4){
-  const r=pix[j],g=pix[j+1],b=pix[j+2];
-  const max=Math.max(r,g,b),min=Math.min(r,g,b);
-  // Hospital raster plans use neutral pale grey for room/compartment fills.
-  if(r>=218&&r<=248&&g>=220&&g<=250&&b>=221&&b<=251&&max-min<=7)roomMask[i]=1;
-  // Dominant dark/bright blue arrows inside elevator icon rectangles.
-  if(r<75&&g>=36&&g<193&&b>142&&b>g+25&&b>r+70)iconMask[i]=1;
+ const c=off.getContext('2d',{willReadFrequently:true});c.drawImage(a.img,0,0,w,h);
+ const px=c.getImageData(0,0,w,h).data;
+ const wall=new Uint8Array(N),grey=new Uint8Array(N),blue=new Uint8Array(N);
+ for(let i=0,j=0;i<N;i++,j+=4){
+  const r=px[j],g=px[j+1],b=px[j+2],max=Math.max(r,g,b),min=Math.min(r,g,b),lum=.299*r+.587*g+.114*b;
+  // Fine gray structural lines are ~#ccc; light gray room fills are ~#eff1f2.
+  if(lum<229 || (max-min>35&&lum<246))wall[i]=1;
+  if(r>=216&&r<=249&&g>=216&&g<=251&&b>=218&&b<=253&&max-min<=13)grey[i]=1;
+  if(r<90&&g>=36&&g<198&&b>141&&b>g+20&&b>r+65)blue[i]=1;
  }
- const identify=(mask,type)=>{
-  const visited=new Uint8Array(n),queue=new Int32Array(n),results=[];
-  for(let start=0;start<n;start++){
-   if(!mask[start]||visited[start])continue;
-   visited[start]=1;queue[0]=start;
-   let head=0,tail=1,minx=w,miny=h,maxx=0,maxy=0,area=0;
-   while(head<tail){
-    const at=queue[head++],x=at%w,y=(at-x)/w;
-    area++;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
-    if(x>0){let q=at-1;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
-    if(x+1<w){let q=at+1;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
-    if(y>0){let q=at-w;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
-    if(y+1<h){let q=at+w;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
+ const maskComponents=(mask,type)=>{
+  const visited=new Uint8Array(N),queue=new Int32Array(N),list=[];
+  for(let seed=0;seed<N;seed++){
+   if(!mask[seed]||visited[seed])continue;
+   let front=0,back=1,area=0,xmin=w,ymin=h,xmax=0,ymax=0;
+   queue[0]=seed;visited[seed]=1;
+   while(front<back){
+    const index=queue[front++],x=index%w,y=(index-x)/w;
+    area++;xmin=Math.min(xmin,x);ymin=Math.min(ymin,y);xmax=Math.max(xmax,x);ymax=Math.max(ymax,y);
+    const nbs=[x>0?index-1:-1,x+1<w?index+1:-1,y>0?index-w:-1,y+1<h?index+w:-1];
+    for(const next of nbs){if(next<0||visited[next]||!mask[next])continue;visited[next]=1;queue[back++]=next;}
    }
-   const bw=maxx-minx+1,bh=maxy-miny+1,density=area/(bw*bh);
+   const bw=xmax-xmin+1,bh=ymax-ymin+1,dens=area/(bw*bh);
    if(type==='room'){
-    if(bw<10||bh<9||bw>w*.78||bh>h*.65||area<125||bw*bh>n*.30||density<.68)continue;
-    if(Math.max(bw/bh,bh/bw)>14)continue;
+    if(bw<6||bh<5||area<50||bw>w*.88||bh>h*.82||dens<.39)continue;
    }else{
-    if(bw<5||bh<5||bw>34||bh>34||area<15||density<.11)continue;
-    if(Math.max(bw/bh,bh/bw)>1.95)continue;
+    if(bw<4||bh<4||bw>38||bh>38||area<11||dens<.10)continue;
    }
-   const factor=1/scale;
-   results.push({kind:type,x:minx*factor,y:miny*factor,w:bw*factor,h:bh*factor,
-     cx:(minx+bw/2)*factor,cy:(miny+bh/2)*factor,rectangularity:Math.round(density*100)/100});
+   list.push({kind:type,x:xmin/ss,y:ymin/ss,w:bw/ss,h:bh/ss,cx:(xmin+xmax+1)/(2*ss),cy:(ymin+ymax+1)/(2*ss),rectangularity:dens});
   }
-  // Avoid overwhelming the UI with tiny irrelevant fragments.
-  return results.sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,type==='room'?250:130);
+  return list;
  };
- const regions={room:identify(roomMask,'room'),icon:identify(iconMask,'icon')};
- regionCache.set(f,regions);return regions;
+ // Connected components of pixels NOT occupied by walls. A single component
+ // is one closed internal compartment, whether its interior is white or gray.
+ const seen=new Uint8Array(N),labels=new Uint32Array(N),q=new Int32Array(N),bounded=[],byId=new Map();
+ let id=0;
+ for(let seed=0;seed<N;seed++){
+  if(wall[seed]||seen[seed])continue;
+  ++id;let front=0,back=1,area=0,xmin=w,ymin=h,xmax=0,ymax=0,sumx=0,sumy=0,touches=false;
+  seen[seed]=1;labels[seed]=id;q[0]=seed;
+  while(front<back){
+   const at=q[front++],x=at%w,y=(at-x)/w;
+   ++area;sumx+=x;sumy+=y;
+   if(x<xmin)xmin=x;if(x>xmax)xmax=x;if(y<ymin)ymin=y;if(y>ymax)ymax=y;
+   if(x===0||y===0||x===w-1||y===h-1)touches=true;
+   if(x>0){const k=at-1;if(!wall[k]&&!seen[k]){seen[k]=1;labels[k]=id;q[back++]=k;}}
+   if(x+1<w){const k=at+1;if(!wall[k]&&!seen[k]){seen[k]=1;labels[k]=id;q[back++]=k;}}
+   if(y>0){const k=at-w;if(!wall[k]&&!seen[k]){seen[k]=1;labels[k]=id;q[back++]=k;}}
+   if(y+1<h){const k=at+w;if(!wall[k]&&!seen[k]){seen[k]=1;labels[k]=id;q[back++]=k;}}
+  }
+  const bw=xmax-xmin+1,bh=ymax-ymin+1;
+  if(touches||area<40||bw<5||bh<5||bw>w*.94||bh>h*.88)continue;
+  const d=area/(bw*bh);if(d<.12)continue;
+  const obj={kind:'bounded',id,x:xmin/ss,y:ymin/ss,w:bw/ss,h:bh/ss,cx:sumx/area/ss,cy:sumy/area/ss,rectangularity:d};
+  bounded.push(obj);byId.set(id,obj);
+ }
+ const result={bounded,room:maskComponents(grey,'room'),icon:maskComponents(blue,'icon'),idMap:labels,byId,sampleScale:ss,w,h};
+ regionCache.set(f,result);return result;
+}
+function customRegions(f){return S.manualBoxes?.[String(f)]||[];}
+function allCandidateTypes(){
+ if(S.regionMode==='off')return [];
+ if(S.regionMode==='icon')return ['manual','icon'];
+ if(S.regionMode==='room')return ['manual','room','bounded'];
+ if(S.regionMode==='bounded')return ['manual','bounded'];
+ return ['manual','bounded','room','icon'];
+}
+function enclosedAt(regions,pt){
+ if(!regions.idMap)return null;
+ let px=Math.round(pt.x*regions.sampleScale),py=Math.round(pt.y*regions.sampleScale);
+ const scan=(x,y)=>x>=0&&y>=0&&x<regions.w&&y<regions.h?regions.byId.get(regions.idMap[y*regions.w+x]):null;
+ let found=scan(px,py);if(found)return found;
+ // Clicking right on the thin wall is common: scan nearest pixels.
+ for(let radius=1;radius<=4;radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+  if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;found=scan(px+dx,py+dy);if(found)return found;
+ }
+ return null;
 }
 function regionAt(side,pt){
- if(S.regionMode==='off'||!S.showRegions)return null;
- const f=S[side],all=detectRegions(f);
- const order=S.regionMode==='icon'?['icon','room']:S.regionMode==='room'?['room','icon']:['icon','room'];
- const hits=[];
- for(const type of order)for(const r of all[type]){
-  const pad=type==='room'?3:5;
-  if(pt.x>=r.x-pad&&pt.x<=r.x+r.w+pad&&pt.y>=r.y-pad&&pt.y<=r.y+r.h+pad)
-   hits.push({...r,priority:order.indexOf(type)});
+ if(!S.showRegions||S.regionMode==='off')return null;
+ const f=S[side],regions=detectRegions(f),types=allCandidateTypes(),hits=[];
+ for(const type of types){
+  if(type==='bounded'){const p=enclosedAt(regions,pt);if(p)hits.push({...p,priority:types.indexOf(type)});continue;}
+  const collection=type==='manual'?customRegions(f):regions[type]||[];
+  for(const r of collection){
+   const padding=type==='icon'?3:1;
+   if(pt.x>=r.x-padding&&pt.x<=r.x+r.w+padding&&pt.y>=r.y-padding&&pt.y<=r.y+r.h+padding)
+    hits.push({...r,priority:types.indexOf(type)});
+  }
  }
  hits.sort((a,b)=>a.priority-b.priority||a.w*a.h-b.w*b.h);
  return hits[0]||null;
@@ -115,24 +154,28 @@ function regionAt(side,pt){
 function selectedRegionPoint(side,pt){
  const r=regionAt(side,pt);
  if(!r)return{xy:pt,region:null};
- return{xy:{x:r.cx,y:r.cy},region:{kind:r.kind,x:r.x,y:r.y,w:r.w,h:r.h,rectangularity:r.rectangularity}};
+ return{xy:{x:r.cx,y:r.cy},region:{kind:r.kind,x:r.x,y:r.y,w:r.w,h:r.h,rectangularity:r.rectangularity,source:r.kind==='manual'?'user':'detector'}};
 }
 function drawDetected(g,p,side){
  if(!S.showRegions||S.regionMode==='off')return;
- const regions=detectRegions(S[side]);
- const types=S.regionMode==='room'?['room']:S.regionMode==='icon'?['icon']:['room','icon'];
+ const regions=detectRegions(S[side]),types=allCandidateTypes();
  g.save();g.lineWidth=1;
  for(const type of types){
-  const color=type==='room'?'#15a181':'#e7a632';
-  g.strokeStyle=color;g.globalAlpha=type==='room'?.42:.65;
-  for(const r of regions[type])g.strokeRect(p.ox+r.x*p.scale,p.oy+r.y*p.scale,r.w*p.scale,r.h*p.scale);
+  const arr=type==='manual'?customRegions(S[side]):regions[type]||[];
+  g.strokeStyle={manual:'#d85caa',bounded:'#32a07c',room:'#4b81c7',icon:'#dcb238'}[type];
+  g.globalAlpha={manual:.85,bounded:.55,room:.38,icon:.65}[type];
+  for(const r of arr)g.strokeRect(p.ox+r.x*p.scale,p.oy+r.y*p.scale,r.w*p.scale,r.h*p.scale);
  }
  g.restore();
- const r=hoverRegion[side];if(r&&types.includes(r.kind)){
+ const r=hoverRegion[side];if(r){
   const x=p.ox+r.x*p.scale,y=p.oy+r.y*p.scale;
-  g.save();g.strokeStyle='#f18d20';g.lineWidth=3;g.setLineDash([5,3]);g.strokeRect(x,y,r.w*p.scale,r.h*p.scale);
-  g.setLineDash([]);g.fillStyle='#fbf8ed';g.fillRect(x,y-20,Math.min(125,r.w*p.scale+55),18);
-  g.fillStyle='#9a6013';g.font='bold 10px sans-serif';g.fillText(r.kind==='room'?'네모 구획':'시설 아이콘',x+5,y-7);g.restore();
+  g.save();g.strokeStyle='#f18d20';g.lineWidth=3;g.setLineDash([5,3]);g.strokeRect(x,y,r.w*p.scale,r.h*p.scale);g.setLineDash([]);
+  g.fillStyle='#fbf8ed';g.fillRect(x,y-20,Math.min(125,r.w*p.scale+55),18);
+  g.fillStyle='#9a6013';g.font='bold 10px sans-serif';g.fillText(r.kind==='bounded'?'흰색/회색 구획':r.kind==='manual'?'직접 지정한 구획':r.kind==='room'?'채워진 구획':'시설 아이콘',x+5,y-7);g.restore();
+ }
+ if(manualDraft?.side===side){
+  const r=manualDraft.rect;
+  g.save();g.strokeStyle='#d45191';g.lineWidth=2.5;g.setLineDash([6,4]);g.strokeRect(p.ox+r.x*p.scale,p.oy+r.y*p.scale,r.w*p.scale,r.h*p.scale);g.restore();
  }
 }
 
