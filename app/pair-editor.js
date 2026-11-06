@@ -22,7 +22,7 @@ function world(f,p){const t=T(f),r=t.rotation*Math.PI/180,c=Math.cos(r),s=Math.s
 function asset(f){return assets.get(Number(f));}
 function dimensions(f){return{x:IMG_WIDTH,y:asset(f)?.height||(f<=6?LOW_HEIGHT:450)};}
 function resetCamera(){camera.left={zoom:1,panX:0,panY:0};camera.right={zoom:1,panX:0,panY:0};}
-function matchPair(p){if(p.group!==S.group)return null;if(p.leftFloor===S.left&&p.rightFloor===S.right)return{...p,L:p.left,R:p.right};if(p.leftFloor===S.right&&p.rightFloor===S.left)return{...p,L:p.right,R:p.left};return null;}
+function matchPair(p){if(p.group!==S.group)return null;if(p.leftFloor===S.left&&p.rightFloor===S.right)return{...p,L:p.left,R:p.right};if(p.leftFloor===S.right&&p.rightFloor===S.left)return{...p,L:p.right,R:p.left,leftRegion:p.rightRegion||null,rightRegion:p.leftRegion||null};return null;}
 function matches(){return S.pairs.map(matchPair).filter(Boolean);}
 function fitting(){return matches().filter(p=>ALIGNABLE.has(p.kind));}
 function imageReady(f){return !!asset(f);}
@@ -76,8 +76,10 @@ function detectRegions(f){
    while(head<tail){
     const at=queue[head++],x=at%w,y=(at-x)/w;
     area++;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
-    const neighbors=[x>0?at-1:-1,x+1<w?at+1:-1,y>0?at-w:-1,y+1<h?at+w:-1];
-    for(let t=0;t<4;t++){const nb=neighbors[t];if(nb>=0&&mask[nb]&&!visited[nb]){visited[nb]=1;queue[tail++]=nb;}}
+    if(x>0){let q=at-1;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
+    if(x+1<w){let q=at+1;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
+    if(y>0){let q=at-w;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
+    if(y+1<h){let q=at+w;if(mask[q]&&!visited[q]){visited[q]=1;queue[tail++]=q;}}
    }
    const bw=maxx-minx+1,bh=maxy-miny+1,density=area/(bw*bh);
    if(type==='room'){
