@@ -26,16 +26,16 @@
   <small class="footnote">아직 북쪽을 모르면 0° 그대로 두고 나중에 정해도 돼요.</small>
  </section>
  <section class="workspace">
-  <div class="workbar"><span id="pairTitle">4F ↔ 3F</span><div class="rightTools"><button id="zoomIn" title="확대">＋</button><button id="zoomOut" title="축소">－</button><button id="fitBtn">전체 보기</button><button id="uploadBtn">도면 업로드</button><button id="bulkBtn">여러 층 업로드</button><input type="file" accept="image/*" id="uploadInput" hidden><input type="file" accept="image/*" id="bulkInput" multiple hidden></div></div>
+  <div class="workbar"><span id="pairTitle">4F ↔ 3F</span><div class="rightTools"><button id="regionToggle" class="primary" title="도면 구획 인식 표시 켜기/끄기">▣ 인식 구역 켜짐</button><select id="regionMode" aria-label="자동 인식할 구역 유형"><option value="auto">아이콘·구획 자동</option><option value="room">네모 구획 우선</option><option value="icon">파란 시설 아이콘 우선</option><option value="off">인식 없이 직접 지정</option></select><button id="zoomIn" title="확대">＋</button><button id="zoomOut" title="축소">－</button><button id="fitBtn">전체 보기</button><button id="uploadBtn">도면 업로드</button><button id="bulkBtn">여러 층 업로드</button><input type="file" accept="image/*" id="uploadInput" hidden><input type="file" accept="image/*" id="bulkInput" multiple hidden></div></div>
   <div class="mapRow" id="mapRow">
     <section class="mapPane"><div class="mapTop"><b id="leftTitle">4층 · 기준</b><small>① 여기 먼저 클릭</small></div><canvas id="leftCanvas"></canvas><div class="mapFoot" id="leftFoot">원본 도면</div></section>
     <section class="mapPane"><div class="mapTop"><b id="rightTitle">3층 · 연결</b><small>② 그다음 여기 클릭</small></div><canvas id="rightCanvas"></canvas><div class="mapFoot" id="rightFoot">대응 위치를 클릭</div></section>
   </div>
   <div class="previewPane" id="previewPane" hidden><div class="previewTop"><b>두 층 겹쳐보기</b><div><label>왼쪽 투명도 <input type="range" id="alpha" min="10" max="90" value="50"></label><button id="closePreview">닫기</button></div></div><canvas id="previewCanvas"></canvas><p>기준점은 자동 정렬에 쓰지만 계단과 에스컬레이터는 연결점만 기록하고 수평 일치를 강제하지 않아요.</p></div>
-  <div class="bottomHint">지도에서 <b>클릭</b>하면 연결점을 찍어요. 작은 시설은 <b>휠로 확대</b>하고, <b>Shift + 드래그</b>로 화면을 움직일 수 있어요. 왼쪽·오른쪽의 확대 상태는 서로 독립적입니다.</div>
+  <div class="bottomHint">지도에서 <b>네모 구획을 클릭</b>하면 자동으로 영역 중심에 맞춰져요. 작은 시설은 <b>휠로 확대</b>하고, <b>Shift + 드래그</b>로 화면을 움직일 수 있어요. 왼쪽·오른쪽의 확대 상태는 서로 독립적입니다.</div>
  </section>
  <aside class="points">
-  <div class="head"><h3>연결점 목록</h3><span id="pairCount">0개</span></div><p class="muted">한 번에 두 점을 찍으면 한 쌍으로 기록됩니다. 점을 잘못 찍었으면 해당 쌍을 삭제하고 다시 찍으세요.</p>
+  <div class="head"><h3>연결점 목록</h3><span id="pairCount">0개</span></div><p class="muted">도면에서 자동 인식한 네모 구획이나 파란 시설 아이콘을 선택하면 정확한 영역 중심으로 붙어요. 자동 감지가 부정확하면 인식 유형을 바꾸거나 직접 지정하세요.</p>
   <div id="pairList" class="pointList"><div class="empty">아직 찍은 연결점이 없어요.</div></div>
   <div class="line"></div><h3>연결시설 지정 원칙</h3>
   <div class="guide"><span class="symbol red">●</span><div><b>엘리베이터</b><small>같은 승강로의 중심을 동일한 위치에 맞춰요.</small></div></div>
