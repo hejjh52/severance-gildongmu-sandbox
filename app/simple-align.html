@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>세브란스 길동무 · 도면 수동 정렬</title><link rel="stylesheet" href="/simple-align.css"></head>
+<body>
+<header class="header">
+ <div class="identity"><div class="logo">⌗</div><div><strong>도면 수동 정렬</strong><small>원본 도면 두 장만 겹쳐서 직접 맞추기</small></div></div>
+ <div class="headBtns"><span id="saveStatus">불러오는 중</span><button id="importBtn">불러오기</button><button id="exportBtn" class="dark">정렬값 저장</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
+</header>
+<main>
+ <aside class="panel">
+  <div class="sectionTitle">비교할 층</div>
+  <div class="seg"><button id="lowBtn" class="selected">1~6층</button><button id="highBtn">8~20층</button></div>
+  <div class="floorPick">
+   <label>기준 도면 <select id="baseFloor"></select></label>
+   <label>맞출 도면 <select id="moveFloor"></select></label>
+  </div>
+  <p class="info">기준 도면은 고정해서 보고, <b>맞출 도면만 드래그</b>하거나 크기를 바꾸세요. 자동 인식·연결점·숫자 표시는 없습니다.</p>
+  <div class="separator"></div>
+  <div class="sectionTitle">맞출 도면 조정</div>
+  <label class="rangeLabel">크기 <b id="scaleValue">100%</b></label>
+  <input type="range" id="scaleRange" min="25" max="400" step="1" value="100">
+  <div class="stepRow"><button id="scaleDown">− 1%</button><input type="number" id="scaleNumber" min="10" max="800" step=".1" value="100" aria-label="도면 크기 퍼센트"><button id="scaleUp">＋ 1%</button></div>
+  <label class="rangeLabel">회전 <b id="rotateValue">0°</b></label>
+  <input type="range" id="rotateRange" min="-180" max="180" step=".5" value="0">
+  <div class="stepRow"><button id="rotateLeft">↶ 0.5°</button><input type="number" id="rotateNumber" step=".1" value="0" aria-label="도면 회전 각도"><button id="rotateRight">↷ 0.5°</button></div>
+  <label class="rangeLabel">겹쳐보기 투명도 <b id="opacityValue">50%</b></label>
+  <input type="range" id="opacityRange" min="0" max="100" step="1" value="50">
+  <label class="toggle"><input type="checkbox" id="removeWhite" checked> 맞출 도면의 흰색 배경 투명화</label>
+  <div class="separator"></div>
+  <div class="sectionTitle">위치 미세 조정</div>
+  <div class="arrows">
+   <div></div><button data-move="0,-1" aria-label="위로 한 픽셀">↑</button><div></div>
+   <button data-move="-1,0" aria-label="왼쪽 한 픽셀">←</button><button id="centerCurrent" class="middle" title="맞출 도면만 초기 위치로">중앙</button><button data-move="1,0" aria-label="오른쪽 한 픽셀">→</button>
+   <div></div><button data-move="0,1" aria-label="아래로 한 픽셀">↓</button><div></div>
+  </div>
+  <p class="tip">방향키: 1px 이동 · Shift+방향키: 10px 이동<br>화면 드래그: 도면 이동 · Shift+드래그: 화면 이동</p>
+  <div class="btnRow"><button id="undoBtn">실행 취소</button><button id="resetFloor">이 층 초기화</button></div>
+  <div class="separator"></div>
+  <div class="sectionTitle">이미지</div>
+  <div class="btnRow"><button id="uploadBtn">선택한 층 교체</button><button id="uploadManyBtn">여러 층 등록</button></div>
+  <input type="file" id="uploadFile" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+  <input type="file" id="uploadMany" accept="image/png,image/jpeg,image/webp,image/*" multiple hidden>
+  <p id="imageInfo" class="tip">1~6층은 기존 도면 자동 사용. 상층부는 이전 업로드 도면을 그대로 사용합니다.</p>
+ </aside>
+ <section class="work">
+  <div class="toolbar">
+   <div class="floorSummary"><span id="baseTitle">4F 기준</span><span class="plus">＋</span><span id="moveTitle">3F 조정</span></div>
+   <div class="tools">
+    <label class="toggle toolbarCheck"><input type="checkbox" id="showBase" checked> 기준</label>
+    <label class="toggle toolbarCheck"><input type="checkbox" id="showMove" checked> 조정</label>
+    <button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="fitBtn">화면 맞춤</button>
+   </div>
+  </div>
+  <div class="canvasWrap"><canvas id="stage" aria-label="두 도면을 겹쳐 직접 위치와 축척을 맞추는 작업 화면"></canvas>
+   <div class="canvasInfo" id="canvasInfo">두 도면이 겹쳐 표시됩니다. 드래그로 위쪽 도면을 옮겨보세요.</div>
+  </div>
+  <div class="workFooter"><span>도면 원본만 표시 · 구획선, 연결점, 번호 오버레이 없음</span><span>마우스 휠: 화면 확대 · Ctrl+휠: 도면 크기</span></div>
+ </section>
+</main>
+<div id="toast" role="status"></div><script type="module" src="/simple-align.js"></script>
+</body></html>
