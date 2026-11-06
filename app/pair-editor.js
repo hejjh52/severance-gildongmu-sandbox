@@ -1,3 +1,4 @@
+import { detectRectangularCells } from '/cell-detector.js';
 const $=id=>document.getElementById(id);
 const LOW=[1,2,3,4,5,6],HIGH=[8,9,10,11,12,13,14,15,16,17,18,19,20];
 const STORAGE='severance-pair-editor-v1', DBNAME='severance-map-images';
@@ -54,12 +55,13 @@ async function putFiles(files,bulk){
 function detectRegions(f){
  if(regionCache.has(f))return regionCache.get(f);
  const a=asset(f);
- if(!a)return {bounded:[],room:[],icon:[],idMap:null,byId:new Map(),sampleScale:1,w:0,h:0};
+ if(!a)return {cell:[],bounded:[],room:[],icon:[],idMap:null,byId:new Map(),sampleScale:1,w:0,h:0};
  // Retain thin (1-pixel) boundaries; earlier aggressive morphology lost narrow cells.
  const ss=.85,w=Math.max(1,Math.round(IMG_WIDTH*ss)),h=Math.max(1,Math.round(a.height*ss)),N=w*h;
  const off=document.createElement('canvas');off.width=w;off.height=h;
  const c=off.getContext('2d',{willReadFrequently:true});c.drawImage(a.img,0,0,w,h);
  const px=c.getImageData(0,0,w,h).data;
+ const cells=detectRectangularCells(px,w,h,ss);
  const wall=new Uint8Array(N),grey=new Uint8Array(N),blue=new Uint8Array(N);
  for(let i=0,j=0;i<N;i++,j+=4){
   const r=px[j],g=px[j+1],b=px[j+2],max=Math.max(r,g,b),min=Math.min(r,g,b),lum=.299*r+.587*g+.114*b;
@@ -114,16 +116,17 @@ function detectRegions(f){
   const obj={kind:'bounded',id,x:xmin/ss,y:ymin/ss,w:bw/ss,h:bh/ss,cx:sumx/area/ss,cy:sumy/area/ss,rectangularity:d};
   bounded.push(obj);byId.set(id,obj);
  }
- const result={bounded,room:maskComponents(grey,'room'),icon:maskComponents(blue,'icon'),idMap:labels,byId,sampleScale:ss,w,h};
+ const result={cell:cells,bounded,room:maskComponents(grey,'room'),icon:maskComponents(blue,'icon'),idMap:labels,byId,sampleScale:ss,w,h};
  regionCache.set(f,result);return result;
 }
 function customRegions(f){return S.manualBoxes?.[String(f)]||[];}
 function allCandidateTypes(){
  if(S.regionMode==='off')return [];
  if(S.regionMode==='icon')return ['manual','icon'];
- if(S.regionMode==='room')return ['manual','room','bounded'];
+ if(S.regionMode==='cell')return ['manual','cell'];
+ if(S.regionMode==='room')return ['manual','cell','room','bounded'];
  if(S.regionMode==='bounded')return ['manual','bounded'];
- return ['manual','bounded','room','icon'];
+ return ['manual','cell','bounded','room','icon'];
 }
 function enclosedAt(regions,pt){
  if(!regions.idMap)return null;
@@ -162,8 +165,8 @@ function drawDetected(g,p,side){
  g.save();g.lineWidth=1;
  for(const type of types){
   const arr=type==='manual'?customRegions(S[side]):regions[type]||[];
-  g.strokeStyle={manual:'#d85caa',bounded:'#32a07c',room:'#4b81c7',icon:'#dcb238'}[type];
-  g.globalAlpha={manual:.85,bounded:.55,room:.38,icon:.65}[type];
+  g.strokeStyle={manual:'#d85caa',cell:'#19a47f',bounded:'#6292bf',room:'#4b81c7',icon:'#dcb238'}[type];
+  g.globalAlpha={manual:.85,cell:.78,bounded:.22,room:.17,icon:.65}[type];
   for(const r of arr)g.strokeRect(p.ox+r.x*p.scale,p.oy+r.y*p.scale,r.w*p.scale,r.h*p.scale);
  }
  g.restore();
@@ -171,7 +174,7 @@ function drawDetected(g,p,side){
   const x=p.ox+r.x*p.scale,y=p.oy+r.y*p.scale;
   g.save();g.strokeStyle='#f18d20';g.lineWidth=3;g.setLineDash([5,3]);g.strokeRect(x,y,r.w*p.scale,r.h*p.scale);g.setLineDash([]);
   g.fillStyle='#fbf8ed';g.fillRect(x,y-20,Math.min(125,r.w*p.scale+55),18);
-  g.fillStyle='#9a6013';g.font='bold 10px sans-serif';g.fillText(r.kind==='bounded'?'흰색/회색 구획':r.kind==='manual'?'직접 지정한 구획':r.kind==='room'?'채워진 구획':'시설 아이콘',x+5,y-7);g.restore();
+  g.fillStyle='#9a6013';g.font='bold 10px sans-serif';g.fillText(r.kind==='cell'?'작은 네모 셀':r.kind==='bounded'?'흰색/회색 구획':r.kind==='manual'?'직접 지정한 구획':r.kind==='room'?'채워진 구획':'시설 아이콘',x+5,y-7);g.restore();
  }
  if(manualDraft?.side===side){
   const r=manualDraft.rect;
@@ -260,7 +263,7 @@ function autoAlign(){
   // One real structural rectangle can provide a scale estimate.
   // Blue icon dimensions are screen symbols and must NOT set map scale.
   const pair=pts[0],l=pair.leftRegion,r=pair.rightRegion;
-  if(['room','bounded'].includes(l?.kind)&&l?.kind===r?.kind&&l.rectangularity>.7&&r.rectangularity>.7&&l.w>8&&l.h>8&&r.w>8&&r.h>8){
+  if(['room','bounded','cell'].includes(l?.kind)&&l?.kind===r?.kind&&l.rectangularity>.7&&r.rectangularity>.7&&l.w>8&&l.h>8&&r.w>8&&r.h>8){
     const rl=l.w/r.w,rh=l.h/r.h;
     if(Math.abs(rl-rh)/Math.max(rl,rh)<.17){
       old.scale=T(S.left).scale*Math.sqrt(rl*rh);
