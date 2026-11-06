@@ -289,7 +289,7 @@ function exportJSON(){
 async function importJSON(file){
  try{const p=JSON.parse(await file.text());
  if(p.schema!=='severance-two-floor-pairs-v1'||!Array.isArray(p.pairs)||!p.transforms)throw Error('지원하지 않는 편집기 JSON입니다.');
- snapshot();S.group=p.group==='high'?'high':'low';S.left=p.left;S.right=p.right;S.north=p.north||{low:0,high:0};S.pairs=p.pairs;S.transforms=p.transforms;
+ snapshot();S.group=p.group==='high'?'high':'low';S.left=p.left;S.right=p.right;S.north=p.north||{low:0,high:0};S.pairs=p.pairs;S.transforms=p.transforms;S.manualBoxes=p.manualBoxes||{};S.regionMode=p.regionMode||'all';S.showRegions=p.showRegions!==false;S.migrationV2=true;
  if(!floors().includes(S.left))S.left=floors()[0];if(!floors().includes(S.right)||S.left===S.right)S.right=floors()[1];
  S.pending=null;S.preview=false;resetCamera();update();save();toast('JSON 불러오기 완료');
  }catch(e){toast('불러오기 실패: '+e.message);}
