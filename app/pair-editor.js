@@ -186,9 +186,8 @@ function paneInfo(side){const c=$(side+'Canvas'),r=c.getBoundingClientRect(),D=d
 function screenLocal(side,x,y){const p=paneInfo(side);return{x:(x-p.ox)/p.scale,y:(y-p.oy)/p.scale};}
 function localScreen(p,point){return{x:p.ox+point.x*p.scale,y:p.oy+point.y*p.scale};}
 function setupCanvas(c){const r=c.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);c.width=Math.max(2,Math.floor(r.width*dpr));c.height=Math.max(2,Math.floor(r.height*dpr));const g=c.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);return{g,w:r.width,h:r.height};}
-function marker(g,x,y,index,color){
- g.save();g.beginPath();g.arc(x,y,10,0,Math.PI*2);g.fillStyle='#fff';g.fill();g.strokeStyle=color;g.lineWidth=3;g.stroke();g.fillStyle=color;g.font='bold 11px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText(index,x,y+0.5);g.restore();
-}
+// Map overlays intentionally omit previously placed point badges and numbers.
+// Matching data remains available in the side panel and JSON export.
 function drawPane(side){
  const p=paneInfo(side),{g,w,h}=setupCanvas(p.c);g.fillStyle='#e9f1f8';g.fillRect(0,0,w,h);g.save();
  g.strokeStyle='#d6e2ed';g.lineWidth=1;for(let x=0;x<w;x+=35){g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();}for(let y=0;y<h;y+=35){g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke();}
@@ -197,8 +196,7 @@ function drawPane(side){
  else{g.fillStyle='#ffffffc9';g.fillRect(16,16,w-32,h-32);g.fillStyle='#607992';g.font='bold 14px system-ui';g.textAlign='center';g.fillText(S[side]+'층 도면을 먼저 업로드하세요',w/2,h/2);}
  g.strokeStyle=side==='left'?'#2c82c8':'#d98740';g.lineWidth=2;g.strokeRect(p.ox,p.oy,p.D.x*p.scale,p.D.y*p.scale);
  if(a)drawDetected(g,p,side);
- matches().forEach((match,i)=>{const v=localScreen(p,side==='left'?match.L:match.R);marker(g,v.x,v.y,i+1,COLORS[match.kind]);});
- if(S.pending&&side==='left'){const v=localScreen(p,S.pending.xy);marker(g,v.x,v.y,matches().length+1,'#139d91');}
+ // Preserve original floor images; do not draw numeric badges for saved or pending points.
  if(!a){g.fillStyle='#607992';g.textAlign='center';g.font='11px system-ui';g.fillText('선택한 층 이미지는 "도면 업로드"로 추가',w/2,h/2+21);}
  g.restore();
 }
@@ -216,8 +214,7 @@ function overlayDraw(){
  if(a){g.globalAlpha=side==='left'?S.alpha:1-S.alpha;g.drawImage(a.img,0,0,d.x,d.y);g.globalAlpha=1;}
  g.strokeStyle=side==='left'?'#156fbb':'#d87b32';g.lineWidth=2/(sc*t.scale);g.strokeRect(0,0,d.x,d.y);g.restore();
  }
- matches().forEach((p,i)=>{const a=worldScreen(world(S.left,p.L)),b=worldScreen(world(S.right,p.R)),color=COLORS[p.kind];
- g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineWidth=2;g.strokeStyle=color;g.stroke();marker(g,a.x,a.y,i+1,color);marker(g,b.x,b.y,i+1,color);});
+ // Overlay comparison shows aligned floor plans only; no old point lines or numbered badges.
 }
 function refreshCanvas(){requestAnimationFrame(()=>{drawPane('left');drawPane('right');if(S.preview)overlayDraw();});}
 function updateHint(){
@@ -242,7 +239,7 @@ function update(){
  $('fitError').textContent=fit.length?fmt(fit.reduce((s,x)=>s+errorFor(x),0)/fit.length)+' 지도 단위':'—';
  $('alignBtn').disabled=!fit.length;
  $('alignHelp').textContent=fit.length===0?'엘리베이터 또는 같은 벽·기둥 구획을 한 쌍 이상 선택하세요.':fit.length===1?'기준 1개: 우선 위치를 맞춥니다. 동일한 실제 네모 구획이라면 변 길이로 배율도 추정할 수 있습니다.':'기준 '+fit.length+'개: 구획 중심 간 거리로 이동·회전·배율을 계산합니다. 멀리 떨어진 두 곳이 좋아요.';
- $('pairList').innerHTML=m.length?m.map((p,i)=>'<div class="item"><div class="count">'+(i+1)+'</div><div class="desc"><b>'+escapeHtml(p.name)+'</b><small>'+escapeHtml(p.kind)+' · '+(p.leftRegion&&p.rightRegion?'양쪽 구역 인식됨':'직접 위치 지정')+' · 오차 '+fmt(errorFor(p))+'</small></div><button data-id="'+escapeHtml(p.id)+'" aria-label="연결점 삭제">삭제</button></div>').join(''):'<div class="empty">아직 찍은 연결점이 없어요.</div>';
+ $('pairList').innerHTML=m.length?m.map((p,i)=>'<div class="item"><div class="desc"><b>'+escapeHtml(p.name)+'</b><small>'+escapeHtml(p.kind)+' · '+(p.leftRegion&&p.rightRegion?'양쪽 구역 인식됨':'직접 위치 지정')+' · 오차 '+fmt(errorFor(p))+'</small></div><button data-id="'+escapeHtml(p.id)+'" aria-label="연결점 삭제">삭제</button></div>').join(''):'<div class="empty">아직 찍은 연결점이 없어요.</div>';
  $('pairList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{snapshot();S.pairs=S.pairs.filter(p=>p.id!==b.dataset.id);update();save();});
  updateHint();refreshCanvas();
 }
