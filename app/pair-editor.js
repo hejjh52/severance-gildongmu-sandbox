@@ -234,6 +234,8 @@ function update(){
  $('previewBtn').textContent=S.preview?'좌우 도면으로 돌아가기':'반투명 겹쳐보기';$('mapRow').hidden=S.preview;$('previewPane').hidden=!S.preview;
  $('typeHelp').textContent=ALIGNABLE.has(S.kind)?'같은 시설의 수평 위치가 일치해야 해요. 자동 정렬의 기준으로 사용합니다.':'계단이나 에스컬레이터는 층별 출발·도착 위치가 달라도 돼요. 서로 연결만 기록하고 정렬 계산에는 쓰지 않습니다.';
  const m=matches(),fit=fitting();$('pairCount').textContent=m.length+'개';$('fitCount').textContent=fit.length+'개';
+ $('cleanupStatus').textContent='이전 저장 연결 정리는 이 브라우저에만 적용됩니다. 목록에서 개별 삭제도 가능해요.';
+
  $('fitError').textContent=fit.length?fmt(fit.reduce((s,x)=>s+errorFor(x),0)/fit.length)+' 지도 단위':'—';
  $('alignBtn').disabled=!fit.length;
  $('alignHelp').textContent=fit.length===0?'엘리베이터 또는 같은 벽·기둥 구획을 한 쌍 이상 선택하세요.':fit.length===1?'기준 1개: 우선 위치를 맞춥니다. 동일한 실제 네모 구획이라면 변 길이로 배율도 추정할 수 있습니다.':'기준 '+fit.length+'개: 구획 중심 간 거리로 이동·회전·배율을 계산합니다. 멀리 떨어진 두 곳이 좋아요.';
@@ -258,7 +260,7 @@ function autoAlign(){
   // One real structural rectangle can provide a scale estimate.
   // Blue icon dimensions are screen symbols and must NOT set map scale.
   const pair=pts[0],l=pair.leftRegion,r=pair.rightRegion;
-  if(l?.kind==='room'&&r?.kind==='room'&&l.w>8&&l.h>8&&r.w>8&&r.h>8){
+  if(['room','bounded'].includes(l?.kind)&&l?.kind===r?.kind&&l.rectangularity>.7&&r.rectangularity>.7&&l.w>8&&l.h>8&&r.w>8&&r.h>8){
     const rl=l.w/r.w,rh=l.h/r.h;
     if(Math.abs(rl-rh)/Math.max(rl,rh)<.17){
       old.scale=T(S.left).scale*Math.sqrt(rl*rh);
@@ -298,19 +300,53 @@ function setFloor(side,f){if(!floors().includes(f))return;S[side]=f;if(S.left===
 function resetPairCamera(){resetCamera();refreshCanvas();}
 function wireCanvas(side){
  const c=$(side+'Canvas');
- c.addEventListener('pointerdown',e=>{if(e.button!==0)return;c.setPointerCapture(e.pointerId);stagePointer={side,pointerId:e.pointerId,start:{x:e.offsetX,y:e.offsetY},last:{x:e.clientX,y:e.clientY},move:0,pan:e.shiftKey};lastSide=side;});
+ c.addEventListener('pointerdown',e=>{
+  if(e.button!==0)return;
+  c.setPointerCapture(e.pointerId);
+  const r=c.getBoundingClientRect(),start=screenLocal(side,e.clientX-r.left,e.clientY-r.top);
+  const box=S.regionMode==='box'&&!e.shiftKey;
+  stagePointer={side,pointerId:e.pointerId,start,last:{x:e.clientX,y:e.clientY},move:0,pan:e.shiftKey,box};
+  if(box){manualDraft={side,rect:{x:start.x,y:start.y,w:0,h:0},start};refreshCanvas();}
+  lastSide=side;
+ });
  c.addEventListener('pointermove',e=>{
   if(!stagePointer){
     if(S.showRegions&&S.regionMode!=='off'&&!S.preview){
       const r=c.getBoundingClientRect(),pt=screenLocal(side,e.clientX-r.left,e.clientY-r.top);
       const candidate=regionAt(side,pt);
-      if(candidate!==hoverRegion[side]){hoverRegion[side]=candidate;refreshCanvas();}
+      if((candidate?.id??'')!==(hoverRegion[side]?.id??'')||candidate?.kind!==hoverRegion[side]?.kind||candidate?.x!==hoverRegion[side]?.x||candidate?.y!==hoverRegion[side]?.y){hoverRegion[side]=candidate;refreshCanvas();}
     }
     return;
   }
-  const p=stagePointer;if(p.side!==side)return;const dx=e.clientX-p.last.x,dy=e.clientY-p.last.y;p.move+=Math.hypot(dx,dy);p.last={x:e.clientX,y:e.clientY};if(p.pan){camera[side].panX+=dx;camera[side].panY+=dy;refreshCanvas();}});
- c.addEventListener('pointerup',e=>{const p=stagePointer;if(!p||p.side!==side)return;stagePointer=null;if(p.pan||p.move>6)return;const r=c.getBoundingClientRect();pairClick(side,screenLocal(side,e.clientX-r.left,e.clientY-r.top));});
- c.addEventListener('pointercancel',()=>stagePointer=null);
+  const p=stagePointer;if(p.side!==side)return;
+  const dx=e.clientX-p.last.x,dy=e.clientY-p.last.y;p.move+=Math.hypot(dx,dy);p.last={x:e.clientX,y:e.clientY};
+  if(p.pan){camera[side].panX+=dx;camera[side].panY+=dy;refreshCanvas();}
+  if(p.box&&manualDraft){
+   const b=c.getBoundingClientRect(),point=screenLocal(side,e.clientX-b.left,e.clientY-b.top);
+   manualDraft.rect={x:Math.min(p.start.x,point.x),y:Math.min(p.start.y,point.y),w:Math.abs(point.x-p.start.x),h:Math.abs(point.y-p.start.y)};
+   refreshCanvas();
+  }
+ });
+ c.addEventListener('pointerup',e=>{
+  const p=stagePointer;if(!p||p.side!==side)return;stagePointer=null;
+  if(p.box){
+   const rect=manualDraft?.rect;manualDraft=null;
+   if(rect&&p.move>=7&&rect.w>=6&&rect.h>=6){
+    const d=dimensions(S[side]),x=Math.max(0,Math.min(d.x,rect.x)),y=Math.max(0,Math.min(d.y,rect.y));
+    const x2=Math.max(0,Math.min(d.x,rect.x+rect.w)),y2=Math.max(0,Math.min(d.y,rect.y+rect.h));
+    if(x2-x>=6&&y2-y>=6){
+     snapshot();const box={kind:'manual',id:uid(),x,y,w:x2-x,h:y2-y,cx:(x+x2)/2,cy:(y+y2)/2,rectangularity:1};
+     (S.manualBoxes[String(S[side])] ||= []).push(box);
+     pairClick(side,{x:box.cx,y:box.cy});save();toast('빠진 구역을 직접 지정했어요. '+(S.pending?'오른쪽에서 같은 구역을 지정하세요.':'연결점 기록 완료'));
+     return;
+    }
+   }
+   refreshCanvas();return;
+  }
+  if(p.pan||p.move>6)return;
+  const r=c.getBoundingClientRect();pairClick(side,screenLocal(side,e.clientX-r.left,e.clientY-r.top));
+ });
+ c.addEventListener('pointercancel',()=>{stagePointer=null;manualDraft=null;refreshCanvas();});
  c.addEventListener('pointerleave',()=>{hoverRegion[side]=null;refreshCanvas();});
  c.addEventListener('wheel',e=>{e.preventDefault();const r=c.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
  const local=screenLocal(side,x,y),cam=camera[side];cam.zoom=Math.max(.5,Math.min(9,cam.zoom*(e.deltaY<0?1.15:1/1.15)));
@@ -321,10 +357,17 @@ function wire(){
  $('leftFloor').onchange=e=>setFloor('left',Number(e.target.value));$('rightFloor').onchange=e=>setFloor('right',Number(e.target.value));
  $('swapBtn').onclick=()=>{[S.left,S.right]=[S.right,S.left];S.pending=null;hoverRegion={left:null,right:null};resetPairCamera();update();save();};
  $('regionToggle').onclick=()=>{S.showRegions=!S.showRegions;hoverRegion={left:null,right:null};update();save();};
- $('regionMode').onchange=e=>{S.regionMode=e.target.value;S.showRegions=S.regionMode!=='off';hoverRegion={left:null,right:null};update();save();};
+ $('regionMode').onchange=e=>{S.regionMode=e.target.value;S.showRegions=S.regionMode!=='off';S.pending=null;manualDraft=null;hoverRegion={left:null,right:null};update();save();};
  $('kind').onchange=e=>{S.kind=e.target.value;S.pending=null;if(ALIGNABLE.has(S.kind)&&(!S.name||S.name==='STAIR-1'||S.name==='ESC-1'))S.name='MAIN-A';if(S.kind==='stairs'&&S.name==='MAIN-A')S.name='STAIR-1';if(S.kind==='escalator'&&S.name==='MAIN-A')S.name='ESC-1';update();save();};
  $('pointName').oninput=e=>{S.name=e.target.value;save();};$('cancelPending').onclick=()=>{S.pending=null;updateHint();refreshCanvas();};
  $('undoBtn').onclick=undo;$('alignBtn').onclick=autoAlign;
+ $('removeOldEscalators').onclick=()=>{
+  const list=matches(),ids=new Set(list.slice(0,2).filter(p=>p.kind==='escalator').map(p=>p.id));
+  if(!ids.size){toast('현재 두 층의 1·2번 연결 중 에스컬레이터가 없습니다.');return;}
+  snapshot();
+  S.pairs=S.pairs.filter(p=>!ids.has(p.id));
+  update();save();toast(ids.size+'개 에스컬레이터 연결 삭제 · 다른 항목은 유지');
+ };
  $('previewBtn').onclick=()=>{S.preview=!S.preview;update();};$('closePreview').onclick=()=>{S.preview=false;update();};
  $('alpha').oninput=e=>{S.alpha=Number(e.target.value)/100;refreshCanvas();};
  $('north').onchange=e=>{S.north[S.group]=Number(e.target.value)||0;save();};
@@ -347,6 +390,26 @@ async function boot(){
  ]);
  geometry=g||{};db=storage;
  try{const saved=JSON.parse(localStorage.getItem(STORAGE)||'null');if(saved&&Array.isArray(saved.pairs)&&saved.transforms)Object.assign(S,saved);}catch(e){}
+ if(!S.manualBoxes||typeof S.manualBoxes!=='object')S.manualBoxes={};
+ if(!S.migrationV2){
+  // One-off cleanup requested for previously numbered #1 / #2 escalator
+  // matches. Preserve a full backup before removing anything.
+  const prior=S.pairs.slice(),groups=new Map(),remove=new Set();
+  for(const p of prior){
+   const floorsPair=[p.leftFloor,p.rightFloor].sort((a,b)=>a-b).join('-');
+   const key=p.group+':'+floorsPair;
+   const index=(groups.get(key)||0)+1;groups.set(key,index);
+   const named=/^(?:1|2|ESC[-_ ]?[12]|에스컬레이터\s*[12](?:번)?)$/i.test(String(p.name||'').trim());
+   if(p.kind==='escalator'&&(index<=2||named))remove.add(p.id);
+  }
+  if(remove.size){
+   try{localStorage.setItem(STORAGE+'-pre-escalator-cleanup',JSON.stringify(prior));}catch(e){}
+   S.pairs=prior.filter(p=>!remove.has(p.id));
+  }
+  S.migrationV2=true;
+  if(!S.regionMode||S.regionMode==='room'||S.regionMode==='auto')S.regionMode='all';
+  save();
+ }
  if(!['low','high'].includes(S.group))S.group='low';
  if(!floors().includes(S.left))S.left=floors()[0];if(!floors().includes(S.right)||S.left===S.right)S.right=floors()[1];
  for(const f of LOW.concat(HIGH))T(f);
