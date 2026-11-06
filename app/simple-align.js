@@ -75,10 +75,10 @@ function floorFromFilename(filename){
  const s=String(filename),m=s.match(/(?:^|[^0-9])([1-9]|1\d|20)\s*(?:F|층)(?=[^a-z]|$)/i)||s.match(/^([1-9]|1\d|20)(?=\.)/i);
  return m?Number(m[1]):null;
 }
-async function upload(files,multiple=false){
+async function upload(files,multiple=false,targetFloor=S.move){
  let n=0;for(const file of files){
   if(!file.type.startsWith('image/'))continue;
-  const f=multiple?floorFromFilename(file.name):(lastFocus==='base'?S.base:S.move);
+  const f=multiple?floorFromFilename(file.name):targetFloor;
   if(f==null||!floors().includes(f))continue;
   if(await loadImage(f,file,true))n++;
  }
@@ -200,13 +200,14 @@ function wire(){
  $('importBtn').onclick=()=>$('importFile').click();
  $('importFile').onchange=async e=>{if(e.target.files[0])await importJSON(e.target.files[0]);e.target.value='';};
  $('exportBtn').onclick=exportJSON;
- $('uploadBtn').onclick=()=>$('uploadFile').click();$('uploadManyBtn').onclick=()=>$('uploadMany').click();
+ $('baseUploadBtn').onclick=()=>$('baseUploadFile').click();$('uploadBtn').onclick=()=>$('uploadFile').click();$('uploadManyBtn').onclick=()=>$('uploadMany').click();
+ $('baseUploadFile').onchange=async e=>{await upload([...e.target.files],false,S.base);e.target.value='';};
  $('uploadFile').onchange=async e=>{await upload([...e.target.files]);e.target.value='';};
  $('uploadMany').onchange=async e=>{await upload([...e.target.files],true);e.target.value='';};
  canvas.addEventListener('pointerdown',e=>{
   if(e.button!==0)return;const rect=canvas.getBoundingClientRect();canvas.setPointerCapture(e.pointerId);
   const pan=e.shiftKey;if(!pan)snapshot();
-  drag={last:{x:e.clientX,y:e.clientY},pan,moved:false};canvas.style.cursor=pan?'grabbing':'move';
+  drag={last:{x:e.clientX,y:e.clientY},pan,moved:false,historySaved:!pan};canvas.style.cursor=pan?'grabbing':'move';
  });
  canvas.addEventListener('pointermove',e=>{
   if(!drag)return;
@@ -215,7 +216,7 @@ function wire(){
   if(drag.pan){view.panX+=dx;view.panY+=dy;}else{transform(S.move).x+=dx/view.zoom;transform(S.move).y+=dy/view.zoom;}
   render();
  });
- function drop(){if(!drag)return;const moved=drag.moved;drag=null;canvas.style.cursor='grab';if(moved){sync();save();}else history.pop();}
+ function drop(){if(!drag)return;const {moved,historySaved}=drag;drag=null;canvas.style.cursor='grab';if(moved){sync();save();}else if(historySaved)history.pop();}
  canvas.addEventListener('pointerup',drop);canvas.addEventListener('pointercancel',drop);
  canvas.addEventListener('wheel',e=>{
   e.preventDefault();
