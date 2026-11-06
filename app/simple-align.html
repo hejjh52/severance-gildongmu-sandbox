@@ -37,7 +37,9 @@
   <div class="btnRow"><button id="undoBtn">실행 취소</button><button id="resetFloor">이 층 초기화</button></div>
   <div class="separator"></div>
   <div class="sectionTitle">이미지</div>
-  <div class="btnRow"><button id="uploadBtn">선택한 층 교체</button><button id="uploadManyBtn">여러 층 등록</button></div>
+  <div class="btnRow"><button id="baseUploadBtn">기준 도면 업로드</button><button id="uploadBtn">조정 도면 업로드</button></div>
+  <button id="uploadManyBtn" style="width:100%;margin-top:7px">여러 층 한 번에 등록</button>
+  <input type="file" id="baseUploadFile" accept="image/png,image/jpeg,image/webp,image/*" hidden>
   <input type="file" id="uploadFile" accept="image/png,image/jpeg,image/webp,image/*" hidden>
   <input type="file" id="uploadMany" accept="image/png,image/jpeg,image/webp,image/*" multiple hidden>
   <p id="imageInfo" class="tip">1~6층은 기존 도면 자동 사용. 상층부는 이전 업로드 도면을 그대로 사용합니다.</p>
