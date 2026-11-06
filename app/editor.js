@@ -52,7 +52,7 @@ async function importImages(files,bulk){
  if(!allowed.includes(f)){if(bulk)continue;f=state.floor;}
  if(await loadImage(f,file,true))n++;
  }
- updatePanels();notify(String(n)+'개 층 이미지 등록 완료 · 브라우저에 저장됨');
+ updateAll();notify(String(n)+'개 층 이미지 등록 완료 · 브라우저에 저장됨');
 }
 function resetView(){view.cx=state.group==='low'?500:500;view.cy=state.group==='low'?560:560;view.zoom=state.group==='low'?.53:.52;view.panX=0;view.panY=0;view.yaw=-.55;draw();}
 function groupSet(g){if(!groups[g])return;state.group=g;state.floor=g==='low'?4:8;state.ref=g==='low'?3:9;state.selected=null;routePending=[];resetView();updateAll();save();}
