@@ -14,12 +14,20 @@
    <label>기준 도면 <select id="baseFloor"></select></label>
    <label>맞출 도면 <select id="moveFloor"></select></label>
   </div>
-  <p class="info">기준 도면은 고정해서 보고, <b>맞출 도면만 드래그</b>하거나 크기를 바꾸세요. 자동 인식·연결점·숫자 표시는 없습니다.</p>
+  <p class="info">기준 도면은 고정하고 <b>맞출 도면만</b> 이동·회전·크기 조절합니다. 원본 층별 안내도는 동일한 실제 축척으로 제작되지 않았을 수 있어요. 같은 구조가 아닌 부분은 억지로 일치시키지 마세요.</p>
   <div class="separator"></div>
   <div class="sectionTitle">맞출 도면 조정</div>
   <label class="rangeLabel">크기 <b id="scaleValue">100%</b></label>
   <input type="range" id="scaleRange" min="25" max="400" step="1" value="100">
   <div class="stepRow"><button id="scaleDown">− 1%</button><input type="number" id="scaleNumber" min="10" max="800" step=".1" value="100" aria-label="도면 크기 퍼센트"><button id="scaleUp">＋ 1%</button></div>
+  <div class="axisHeader"><div class="sectionTitle">가로·세로 비율 미세 보정</div><label class="toggle" title="켜면 가로와 세로를 동일한 축척으로 조정합니다."><input type="checkbox" id="axisLink" checked> 비율 잠금</label></div>
+  <label class="rangeLabel">가로 축척 X <b id="scaleXValue">100%</b></label>
+  <input type="range" id="scaleXRange" min="25" max="400" step=".5" value="100">
+  <div class="stepRow"><button id="scaleXDown">− 0.5%</button><input type="number" id="scaleXNumber" min="10" max="800" step=".1" value="100" aria-label="가로 축척 퍼센트"><button id="scaleXUp">＋ 0.5%</button></div>
+  <label class="rangeLabel">세로 축척 Y <b id="scaleYValue">100%</b></label>
+  <input type="range" id="scaleYRange" min="25" max="400" step=".5" value="100">
+  <div class="stepRow"><button id="scaleYDown">− 0.5%</button><input type="number" id="scaleYNumber" min="10" max="800" step=".1" value="100" aria-label="세로 축척 퍼센트"><button id="scaleYUp">＋ 0.5%</button></div>
+  <p id="anisotropyTip" class="tip">기본은 가로·세로 같은 비율입니다. 한쪽만 어긋날 때 비율 잠금을 해제해 미세 조정하세요.</p>
   <label class="rangeLabel">회전 <b id="rotateValue">0°</b></label>
   <input type="range" id="rotateRange" min="-180" max="180" step=".5" value="0">
   <div class="stepRow"><button id="rotateLeft">↶ 0.5°</button><input type="number" id="rotateNumber" step=".1" value="0" aria-label="도면 회전 각도"><button id="rotateRight">↷ 0.5°</button></div>
