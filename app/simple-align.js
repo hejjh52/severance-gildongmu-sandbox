@@ -4,18 +4,28 @@ const KEY='severance-simple-floor-align-v1', DBNAME='severance-map-images', IMAG
 const canvas=$('stage'),ctx=canvas.getContext('2d');
 let db=null,images=new Map(),history=[],drag=null,toastTimer=null,saveTimer=null;
 let W=900,H=650,dpr=1,view={cx:496,cy:570,zoom:.55,panX:0,panY:0},lastFocus='move';
-let S={area:'low',base:4,move:3,transforms:{},alpha:.50,removeWhite:true,showBase:true,showMove:true};
+let S={area:'low',base:4,move:3,transforms:{},alpha:.50,removeWhite:true,showBase:true,showMove:true,axisLink:true};
 const floors=()=>S.area==='low'?LOW:HIGH;
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 const str=(x,d=1)=>Number(x).toFixed(d);
 function toast(txt){$('toast').textContent=txt;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),2900);}
-function keep(){return{area:S.area,base:S.base,move:S.move,transforms:S.transforms,alpha:S.alpha,removeWhite:S.removeWhite,showBase:S.showBase,showMove:S.showMove};}
+function keep(){return{area:S.area,base:S.base,move:S.move,transforms:S.transforms,alpha:S.alpha,removeWhite:S.removeWhite,showBase:S.showBase,showMove:S.showMove,axisLink:S.axisLink};}
 function save(){clearTimeout(saveTimer);$('saveStatus').textContent='저장 중…';saveTimer=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify(keep()));$('saveStatus').textContent='브라우저에 저장됨';}catch(e){$('saveStatus').textContent='저장 실패 · 파일 저장 필요';}},300);}
 function snapshot(){history.push(JSON.stringify(keep()));if(history.length>45)history.shift();}
-function transform(f){return S.transforms[f]||(S.transforms[f]={x:0,y:0,scale:1,rotation:0});}
+function transform(f){
+ const t=S.transforms[f]||(S.transforms[f]={x:0,y:0,scale:1,rotation:0});
+ // Backward-compatible with alignment JSONs saved before separate X/Y controls.
+ const base=Number(t.scale)||1;
+ if(!(Number(t.scaleX)>0))t.scaleX=base;
+ if(!(Number(t.scaleY)>0))t.scaleY=base;
+ if(!Number.isFinite(Number(t.x)))t.x=0;
+ if(!Number.isFinite(Number(t.y)))t.y=0;
+ if(!Number.isFinite(Number(t.rotation)))t.rotation=0;
+ return t;
+}
 function asset(f){return images.get(Number(f));}
 function heightFor(f){return asset(f)?.h||(f<=6?1140:520);}
-function localToWorld(f,p){const t=transform(f),r=t.rotation*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return{x:t.x+t.scale*(p.x*c-p.y*s),y:t.y+t.scale*(p.x*s+p.y*c)};}
+function localToWorld(f,p){const t=transform(f),r=t.rotation*Math.PI/180,c=Math.cos(r),s=Math.sin(r),u=p.x*t.scaleX,v=p.y*t.scaleY;return{x:t.x+u*c-v*s,y:t.y+u*s+v*c};}
 function setAroundCenter(f,field,value){
  const t=transform(f),c={x:IMAGEWIDTH/2,y:heightFor(f)/2},before=localToWorld(f,c);
  t[field]=value;const after=localToWorld(f,c);t.x+=before.x-after.x;t.y+=before.y-after.y;
@@ -96,7 +106,7 @@ function layer(f,opacity,cutout=false){
  ctx.save();
  ctx.translate(W/2+view.panX-view.cx*view.zoom,H/2+view.panY-view.cy*view.zoom);
  ctx.scale(view.zoom,view.zoom);
- ctx.translate(t.x,t.y);ctx.rotate(r);ctx.scale(t.scale,t.scale);
+ ctx.translate(t.x,t.y);ctx.rotate(r);ctx.scale(t.scaleX,t.scaleY);
  ctx.globalAlpha=opacity;ctx.drawImage(cutout?a.cut:a.img,0,0,IMAGEWIDTH,a.h);
  ctx.restore();
 }
@@ -123,15 +133,36 @@ function sync(){
  }
  const t=transform(S.move);
  $('baseTitle').textContent=S.base+'F 기준';$('moveTitle').textContent=S.move+'F 조정';
- $('scaleValue').textContent=str(t.scale*100,1)+'%';$('scaleRange').value=clamp(t.scale*100,25,400);$('scaleNumber').value=str(t.scale*100,1);
+ const uniform=(t.scaleX+t.scaleY)/2;
+ $('scaleValue').textContent=str(uniform*100,1)+'%';$('scaleRange').value=clamp(uniform*100,25,400);$('scaleNumber').value=str(uniform*100,1);
+ $('scaleXValue').textContent=str(t.scaleX*100,1)+'%';$('scaleXRange').value=clamp(t.scaleX*100,25,400);$('scaleXNumber').value=str(t.scaleX*100,1);
+ $('scaleYValue').textContent=str(t.scaleY*100,1)+'%';$('scaleYRange').value=clamp(t.scaleY*100,25,400);$('scaleYNumber').value=str(t.scaleY*100,1);
+ $('axisLink').checked=S.axisLink!==false;
+ const delta=Math.abs(t.scaleX-t.scaleY)/Math.max(.0001,(t.scaleX+t.scaleY)/2);
+ $('anisotropyTip').textContent=delta>.12?'가로·세로 차이가 '+str(delta*100,1)+'%입니다. 원본이 실제로 왜곡되었는지 확인하고 사용하세요.':'두 도면은 동일한 실제 축척을 보장하지 않습니다. 공통 시설만 맞추고 다른 구조는 억지로 일치시키지 마세요.';
  $('rotateValue').textContent=str(t.rotation,1)+'°';$('rotateRange').value=clamp(t.rotation,-180,180);$('rotateNumber').value=str(t.rotation,1);
  $('opacityValue').textContent=Math.round(S.alpha*100)+'%';$('opacityRange').value=S.alpha*100;
  $('removeWhite').checked=S.removeWhite;$('showBase').checked=S.showBase;$('showMove').checked=S.showMove;
  updateImageStatus();updateZoom();render();
 }
 function changeScale(scale,record=true){
- scale=clamp(Number(scale),.1,8);if(!Number.isFinite(scale))return;
- if(record)snapshot();setAroundCenter(S.move,'scale',scale);sync();save();
+ scale=Number(scale);if(!Number.isFinite(scale))return;scale=clamp(scale,.1,8);
+ if(record)snapshot();
+ const t=transform(S.move),current=(t.scaleX+t.scaleY)/2,ratio=current>0?scale/current:1;
+ const center={x:IMAGEWIDTH/2,y:heightFor(S.move)/2},before=localToWorld(S.move,center);
+ t.scaleX=clamp(t.scaleX*ratio,.1,8);
+ t.scaleY=clamp(t.scaleY*ratio,.1,8);
+ const after=localToWorld(S.move,center);t.x+=before.x-after.x;t.y+=before.y-after.y;
+ t.scale=(t.scaleX+t.scaleY)/2;sync();save();
+}
+function changeAxis(axis,value,record=true){
+ value=Number(value);if(!Number.isFinite(value))return;value=clamp(value,.1,8);
+ if(record)snapshot();
+ const f=S.move,t=transform(f),p={x:IMAGEWIDTH/2,y:heightFor(f)/2},before=localToWorld(f,p);
+ t[axis]=value;
+ if(S.axisLink!==false)t[axis==='scaleX'?'scaleY':'scaleX']=value;
+ const after=localToWorld(f,p);t.x+=before.x-after.x;t.y+=before.y-after.y;
+ t.scale=(t.scaleX+t.scaleY)/2;sync();save();
 }
 function changeRotation(angle,record=true){
  angle=Number(angle);if(!Number.isFinite(angle))return;
@@ -166,7 +197,7 @@ async function importJSON(file){
   const v=JSON.parse(await file.text());
   if(v.schema!=='severance-simple-floor-align-v1'||!v.transforms||typeof v.transforms!=='object')throw Error('이 편집기에서 저장한 JSON 파일만 사용할 수 있어요.');
   snapshot();S.area=v.area==='high'?'high':'low';S.base=v.base;S.move=v.move;S.transforms=v.transforms;
-  S.alpha=typeof v.alpha==='number'?clamp(v.alpha,0,1):.5;S.removeWhite=v.removeWhite!==false;S.showBase=v.showBase!==false;S.showMove=v.showMove!==false;
+  S.alpha=typeof v.alpha==='number'?clamp(v.alpha,0,1):.5;S.removeWhite=v.removeWhite!==false;S.showBase=v.showBase!==false;S.showMove=v.showMove!==false;S.axisLink=v.axisLink!==false;
   if(!floors().includes(S.base))S.base=floors()[0];
   if(!floors().includes(S.move)||S.move===S.base)S.move=floors().find(x=>x!==S.base);
   sync();fitView();save();toast('정렬값 불러오기 완료');
@@ -182,8 +213,18 @@ function wire(){
  $('rotateRange').oninput=e=>changeRotation(Number(e.target.value),false);
  $('scaleNumber').onchange=e=>changeScale(Number(e.target.value)/100);
  $('rotateNumber').onchange=e=>changeRotation(Number(e.target.value));
- $('scaleUp').onclick=()=>changeScale(transform(S.move).scale+.01);
- $('scaleDown').onclick=()=>changeScale(transform(S.move).scale-.01);
+ $('scaleUp').onclick=()=>changeScale((transform(S.move).scaleX+transform(S.move).scaleY)/2+.01);
+ $('scaleDown').onclick=()=>changeScale((transform(S.move).scaleX+transform(S.move).scaleY)/2-.01);
+ $('scaleXRange').onpointerdown=snapshot;$('scaleYRange').onpointerdown=snapshot;
+ $('scaleXRange').oninput=e=>changeAxis('scaleX',Number(e.target.value)/100,false);
+ $('scaleYRange').oninput=e=>changeAxis('scaleY',Number(e.target.value)/100,false);
+ $('scaleXNumber').onchange=e=>changeAxis('scaleX',Number(e.target.value)/100);
+ $('scaleYNumber').onchange=e=>changeAxis('scaleY',Number(e.target.value)/100);
+ $('scaleXDown').onclick=()=>changeAxis('scaleX',transform(S.move).scaleX-.005);
+ $('scaleXUp').onclick=()=>changeAxis('scaleX',transform(S.move).scaleX+.005);
+ $('scaleYDown').onclick=()=>changeAxis('scaleY',transform(S.move).scaleY-.005);
+ $('scaleYUp').onclick=()=>changeAxis('scaleY',transform(S.move).scaleY+.005);
+ $('axisLink').onchange=e=>{S.axisLink=e.target.checked;sync();save();};
  $('rotateLeft').onclick=()=>changeRotation(transform(S.move).rotation-.5);
  $('rotateRight').onclick=()=>changeRotation(transform(S.move).rotation+.5);
  $('opacityRange').oninput=e=>{S.alpha=Number(e.target.value)/100;$('opacityValue').textContent=e.target.value+'%';render();save();};
@@ -194,7 +235,7 @@ function wire(){
   const [dx,dy]=button.dataset.move.split(',').map(Number);nudge(dx,dy);
  };
  $('centerCurrent').onclick=()=>{snapshot();transform(S.move).x=0;transform(S.move).y=0;sync();save();};
- $('resetFloor').onclick=()=>{if(!confirm(S.move+'층 위치·회전·크기를 초기화할까요? 다른 층의 정렬은 유지됩니다.'))return;snapshot();S.transforms[S.move]={x:0,y:0,scale:1,rotation:0};sync();save();};
+ $('resetFloor').onclick=()=>{if(!confirm(S.move+'층 위치·회전·크기를 초기화할까요? 다른 층의 정렬은 유지됩니다.'))return;snapshot();S.transforms[S.move]={x:0,y:0,scale:1,scaleX:1,scaleY:1,rotation:0};sync();save();};
  $('undoBtn').onclick=undo;
  $('zoomIn').onclick=()=>zoomAt(1.2);$('zoomOut').onclick=()=>zoomAt(1/1.2);$('fitBtn').onclick=fitView;
  $('importBtn').onclick=()=>$('importFile').click();
@@ -220,7 +261,7 @@ function wire(){
  canvas.addEventListener('pointerup',drop);canvas.addEventListener('pointercancel',drop);
  canvas.addEventListener('wheel',e=>{
   e.preventDefault();
-  if(e.ctrlKey||e.metaKey)changeScale(transform(S.move).scale*(e.deltaY<0?1.025:1/1.025));
+  if(e.ctrlKey||e.metaKey)changeScale((transform(S.move).scaleX+transform(S.move).scaleY)/2*(e.deltaY<0?1.025:1/1.025));
   else {const r=canvas.getBoundingClientRect();zoomAt(e.deltaY<0?1.12:1/1.12,{x:e.clientX-r.left,y:e.clientY-r.top});}
  },{passive:false});
  document.addEventListener('keydown',e=>{
@@ -234,6 +275,7 @@ function wire(){
 async function init(){
  wire();try{const data=JSON.parse(localStorage.getItem(KEY)||'null');if(data&&data.transforms&&typeof data.transforms==='object')Object.assign(S,data);}catch(e){}
  if(!['low','high'].includes(S.area))S.area='low';
+ if(typeof S.axisLink!=='boolean')S.axisLink=true;
  if(!floors().includes(S.base))S.base=floors()[0];
  if(!floors().includes(S.move)||S.move===S.base)S.move=floors().find(x=>x!==S.base);
  db=await openDB().catch(()=>null);
